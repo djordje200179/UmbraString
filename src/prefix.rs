@@ -1,9 +1,12 @@
 use std::mem::size_of;
 
+pub type PrefixType = u32;
+pub const PREFIX_SIZE: usize = size_of::<PrefixType>();
+
 #[derive(Copy, Clone, Eq)]
-pub(crate) union Prefix {
-	pub word: u32,
-	pub bytes: [u8; size_of::<u32>()],
+pub union Prefix {
+	pub word: PrefixType,
+	pub bytes: [u8; PREFIX_SIZE],
 }
 
 impl PartialEq for Prefix {

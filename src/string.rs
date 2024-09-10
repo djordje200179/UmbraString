@@ -1,7 +1,8 @@
 use core::slice;
 use std::{cmp::Ordering, fmt::{Debug, Display, Formatter}, ptr::slice_from_raw_parts, str::from_utf8_unchecked};
+use crate::{prefix::{Prefix, PREFIX_SIZE}, remainder::{Remainder, REMAINDER_SIZE}};
 
-use crate::{prefix::Prefix, remainder::Remainder};
+pub const INLINE_SIZE: usize = PREFIX_SIZE + REMAINDER_SIZE;
 
 pub struct String {
 	len: u32,
@@ -11,25 +12,25 @@ pub struct String {
 
 impl String {
 	fn prefix_str(&self) -> &str {
-		unsafe { from_utf8_unchecked(&self.prefix.bytes[..self.len.min(4) as usize]) }
+		unsafe { from_utf8_unchecked(&self.prefix.bytes[..(self.len()).min(PREFIX_SIZE)]) }
 	}
 
 	fn remainder_str(&self) -> &str {
 		unsafe { from_utf8_unchecked(
-			match self.len {
-				0..=4 => &[],
-				5..=12 => &self.remainder.inline_data[..(self.len - 4) as usize],
+			match self.len() {
+				0..PREFIX_SIZE => &[],
+				PREFIX_SIZE..INLINE_SIZE => &self.remainder.inline_data[..(self.len() - PREFIX_SIZE)],
 				_ => self.heap_data(),
 			}
 		)}
 	}
 
 	unsafe fn heap_data(&self) -> &[u8] {
-		slice::from_raw_parts(self.remainder.heap_data, (self.len - 4) as usize)
+		slice::from_raw_parts(self.remainder.heap_data, self.len() - PREFIX_SIZE)
 	}
 
-	pub fn len(&self) -> u32 {
-		self.len
+	pub fn len(&self) -> usize {
+		self.len as _
 	}
 }
 
@@ -50,17 +51,17 @@ impl From<&str> for String {
 
 		unsafe {
 			match str_slice.len() {
-				0..=4 => {
+				0..PREFIX_SIZE => {
 					ustr.prefix.bytes[..str_slice.len()].copy_from_slice(str_slice.as_bytes());
 				},
-				5..=12 => {
-					ustr.prefix.bytes.copy_from_slice(&str_slice.as_bytes()[0..4]);
-					str_slice = &str_slice[4..];
+				PREFIX_SIZE..INLINE_SIZE => {
+					ustr.prefix.bytes.copy_from_slice(&str_slice.as_bytes()[0..PREFIX_SIZE]);
+					str_slice = &str_slice[PREFIX_SIZE..];
 					ustr.remainder.inline_data[..str_slice.len()].copy_from_slice(str_slice.as_bytes());
 				},
 				_ => {
-					ustr.prefix.bytes.copy_from_slice(&str_slice.as_bytes()[0..4]);
-					str_slice = &str_slice[4..];
+					ustr.prefix.bytes.copy_from_slice(&str_slice.as_bytes()[0..PREFIX_SIZE]);
+					str_slice = &str_slice[PREFIX_SIZE..];
 
 					let heap_data = Box::new(str_slice.as_bytes().to_vec().into_boxed_slice());
 					ustr.remainder.heap_data = Box::leak(heap_data).as_ptr()
@@ -75,7 +76,7 @@ impl From<&str> for String {
 impl Clone for String {
 	fn clone(&self) -> Self {
 		String {
-			remainder: unsafe { if self.len > 12 {
+			remainder: unsafe { if self.len() > INLINE_SIZE {
 				let cloned_heap_data = self.heap_data().to_vec().into_boxed_slice();
 				Remainder { heap_data: Box::leak(Box::new(cloned_heap_data)).as_ptr() }
 			} else {
@@ -88,9 +89,9 @@ impl Clone for String {
 
 impl Drop for String {
 	fn drop(&mut self) {
-		if self.len > 12 {
+		if self.len() > INLINE_SIZE {
 			unsafe {
-				let heap_slice = slice_from_raw_parts(self.remainder.heap_data, (self.len - 4) as usize);
+				let heap_slice = slice_from_raw_parts(self.remainder.heap_data, self.len() - PREFIX_SIZE);
 				drop(Box::from_raw(heap_slice as *const [u8] as *mut [u8]));
 			}
 		}
@@ -99,7 +100,7 @@ impl Drop for String {
 
 impl Display for String {
 	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-		if self.len <= 4 {
+		if self.len() <= PREFIX_SIZE {
 			return write!(f, "{}", self.prefix_str());
 		} else {
 			write!(f, "{}{}", self.prefix_str(), self.remainder_str())?;
@@ -121,9 +122,9 @@ impl PartialEq for String {
 		}
 
 		unsafe {
-			match self.len {
-				0..=4 => true,
-				5..=12 => self.remainder.word == other.remainder.word,
+			match self.len() {
+				0..PREFIX_SIZE => true,
+				PREFIX_SIZE..INLINE_SIZE => self.remainder.word == other.remainder.word,
 				_ => self.heap_data() == other.heap_data(),
 			}
 		}
@@ -141,9 +142,9 @@ impl Ord for String {
 				return Ordering::Less;
 			}
 
-			match self.len {
-				0..=4 => Ordering::Equal,
-				5..=12 => self.remainder.word.cmp(&other.remainder.word),
+			match self.len() {
+				0..PREFIX_SIZE => Ordering::Equal,
+				PREFIX_SIZE..INLINE_SIZE => self.remainder.word.cmp(&other.remainder.word),
 				_ => self.heap_data().cmp(other.heap_data()),
 			}
 		}
