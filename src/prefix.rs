@@ -1,6 +1,6 @@
 use std::mem::size_of;
 
-pub type PrefixType = u32;
+pub type PrefixType = usize;
 pub const PREFIX_SIZE: usize = size_of::<PrefixType>();
 
 #[derive(Copy, Clone, Eq)]

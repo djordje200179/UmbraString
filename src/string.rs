@@ -5,7 +5,7 @@ use crate::{prefix::{Prefix, PREFIX_SIZE}, remainder::{Remainder, REMAINDER_SIZE
 pub const INLINE_SIZE: usize = PREFIX_SIZE + REMAINDER_SIZE;
 
 pub struct String {
-	len: u32,
+	len: usize,
 	prefix: Prefix,
 	remainder: Remainder,
 }
@@ -30,7 +30,7 @@ impl String {
 	}
 
 	pub fn len(&self) -> usize {
-		self.len as _
+		self.len
 	}
 }
 
@@ -47,7 +47,7 @@ impl Default for String {
 impl From<&str> for String {
 	fn from(mut str_slice: &str) -> Self {
 		let mut ustr = String::default();
-		ustr.len = str_slice.len() as u32;
+		ustr.len = str_slice.len();
 
 		unsafe {
 			match str_slice.len() {
